@@ -24,8 +24,16 @@ type SubjectListResponse = {
 const pageSize = 18;
 const requestHeaders = {
   Accept: "application/json",
-  "x-client-info": JSON.stringify({ timezone: "Asia/Colombo" }),
+  "x-client-info": JSON.stringify({ timezone: "Asia/Manila" }),
   "x-source": "",
+};
+
+const legacyTabMap: Record<string, string> = {
+  "/": "",
+  "/newWeb/movie": "ONEROOM_MOVIE",
+  "/newWeb/tv-series": "5",
+  "/newWeb/animated-series": "8",
+  "/newWeb/midnight": "ONEROOM_MIDNIGHT",
 };
 
 function collectSubjectPreviews(value: unknown): Map<string, SubjectPreview> {
@@ -105,8 +113,9 @@ async function fetchPosts(
     posts.push({
       title,
       link: href,
-      image:
-        posterUrl(image.attr("data-src") || subject?.coverUrl || image.attr("src")),
+      image: posterUrl(
+        image.attr("data-src") || subject?.coverUrl || image.attr("src"),
+      ),
     });
   });
   return posts;
@@ -126,27 +135,15 @@ function mapSubjects(subjects: SubjectPreview[]): Post[] {
     }));
 }
 
-async function fetchCatalogPage(
-  filter: string,
-  page: number,
+async function fetchSubjectList(
+  endpoint: string,
   signal: AbortSignal,
 ): Promise<Post[]> {
   const baseUrl = await getProviderBaseUrl();
-  const params = new URLSearchParams({
-    page: String(Math.max(1, page)),
-    perPage: String(pageSize),
+  const response = await fetch(absoluteUrl(baseUrl, endpoint), {
+    headers: requestHeaders,
+    signal,
   });
-  if (filter === "/newWeb/movie") {
-    params.set("tabId", "ONEROOM_MOVIE");
-  }
-
-  const response = await fetch(
-    absoluteUrl(
-      baseUrl,
-      `/wefeed-h5api-bff/subject/trending?${params.toString()}`,
-    ),
-    { headers: requestHeaders, signal },
-  );
   if (!response.ok) throw new Error(`MovieBox Web returned ${response.status}`);
 
   const payload = (await response.json()) as SubjectListResponse;
@@ -163,6 +160,40 @@ async function fetchCatalogPage(
   );
 }
 
+async function fetchTrendingTab(
+  tabId: string,
+  page: number,
+  signal: AbortSignal,
+): Promise<Post[]> {
+  const params = new URLSearchParams({
+    page: String(Math.max(1, page)),
+    perPage: String(pageSize),
+  });
+  if (tabId) {
+    params.set("tabId", tabId);
+  }
+  return fetchSubjectList(
+    `/wefeed-h5api-bff/subject/trending?${params.toString()}`,
+    signal,
+  );
+}
+
+async function fetchRankingPage(
+  rankingId: string,
+  page: number,
+  signal: AbortSignal,
+): Promise<Post[]> {
+  const params = new URLSearchParams({
+    id: rankingId,
+    page: String(Math.max(1, page)),
+    perPage: String(pageSize),
+  });
+  return fetchSubjectList(
+    `/wefeed-h5api-bff/ranking-list/content?${params.toString()}`,
+    signal,
+  );
+}
+
 export const getPosts = async function ({
   filter,
   page,
@@ -176,9 +207,17 @@ export const getPosts = async function ({
   providerContext: ProviderContext;
 }): Promise<Post[]> {
   const path = filter || "/";
-  if (["/", "/newWeb/movie", "/newWeb/tv-series"].includes(path)) {
-    return fetchCatalogPage(path, page, signal);
+
+  if (path.startsWith("ranking:")) {
+    return fetchRankingPage(path.slice("ranking:".length), page, signal);
   }
+  if (path.startsWith("tab:")) {
+    return fetchTrendingTab(path.slice("tab:".length), page, signal);
+  }
+  if (path in legacyTabMap) {
+    return fetchTrendingTab(legacyTabMap[path], page, signal);
+  }
+
   if (page > 1) return [];
   return fetchPosts(path, signal, providerContext);
 };
