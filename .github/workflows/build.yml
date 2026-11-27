@@ -1,0 +1,34 @@
+name: Build Providers
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'providers/**'
+      - 'urls.json'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'build-bundled.js'
+      - 'provider-build-metadata.js'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci || npm install
+      - run: npm run build
+      - name: Commit built dist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dist manifest.json
+          git diff --staged --quiet || (git commit -m "Build dist [skip ci]" && git push)
