@@ -1,12 +1,14 @@
 name: Build Providers
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
       - master
     paths:
       - 'providers/**'
+      - 'manifest.json'
       - 'urls.json'
       - 'package.json'
       - 'tsconfig.json'
